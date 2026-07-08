@@ -15,8 +15,11 @@ export const palette = {
   paperRaised: '#FBF8F1',
   paperSunken: '#EAE3D2',
   ink: '#16130D',
-  inkSoft: '#5C564A',
-  inkFaint: '#8A8375',
+  // darkened from the original #5C564A / #8A8375 — those measured ~6.3:1 /
+  // ~3.3:1 against `paper`; the latter fails WCAG AA for the small mono
+  // labels it's used on throughout the app (focus lines, meta rows).
+  inkSoft: '#403A2E',
+  inkFaint: '#6A6353',
   line: '#16130D',
   lineFaint: '#D8D0BD',
   strength: '#E8490F', // signal orange
@@ -35,7 +38,8 @@ export const paletteDark = {
   paperSunken: '#100E0C',
   ink: '#F0EADB',
   inkSoft: '#A79F8E',
-  inkFaint: '#6E6759',
+  // lightened from #6E6759 (~3.25:1 against dark paper) for the same reason.
+  inkFaint: '#948C7A',
   line: '#F0EADB',
   lineFaint: '#3A362E',
   strength: '#FF5C1F',

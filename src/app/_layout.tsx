@@ -19,11 +19,27 @@ import { View, useColorScheme } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { StoreProvider } from '@/lib/store';
+import { ThemeProvider, useResolvedTheme } from '@/theme/ThemeProvider';
 import { currentPalette } from '@/theme/tokens';
 
 SplashScreen.preventAutoHideAsync();
 
+/** Reads the resolved (state-aware) theme, so it can only render inside StoreProvider. */
+function RootStack() {
+  const { c } = useResolvedTheme();
+  return (
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        contentStyle: { backgroundColor: c.paper },
+        animation: 'fade',
+      }}
+    />
+  );
+}
+
 export default function RootLayout() {
+  // used only for the pre-store splash frame, before ThemeProvider can read state
   const scheme = useColorScheme() === 'dark' ? 'dark' : 'light';
   const c = currentPalette(scheme);
   const [loaded] = useFonts({
@@ -46,13 +62,9 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <StoreProvider>
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: c.paper },
-            animation: 'fade',
-          }}
-        />
+        <ThemeProvider>
+          <RootStack />
+        </ThemeProvider>
       </StoreProvider>
     </SafeAreaProvider>
   );

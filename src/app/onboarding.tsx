@@ -5,7 +5,7 @@
  */
 import { useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
-import { View, useWindowDimensions } from 'react-native';
+import { TextInput, View, useWindowDimensions } from 'react-native';
 import Animated, {
   Easing,
   FadeIn,
@@ -23,13 +23,17 @@ import Svg, { Circle, Ellipse } from 'react-native-svg';
 
 import { AppText } from '@/components/ui/AppText';
 import { BlockButton, Rule, Stepper } from '@/components/ui/Bits';
-import { IconArrowLeft, IconBarbell, IconTrack } from '@/components/ui/Icons';
+import { IconArrowLeft, IconBarbell, IconCheck, IconTrack } from '@/components/ui/Icons';
 import { PressableScale } from '@/components/ui/Pressable';
+import { generateProgramAI, hasAiConfigured } from '@/lib/ai';
 import { GOAL_PARAMS, generateProgram, fmtPace, type Baseline } from '@/lib/engine';
+import { ALL_EQUIPMENT, EQUIPMENT_LABELS } from '@/lib/exercises';
 import { useStore } from '@/lib/store';
-import type { Goal } from '@/lib/types';
+import type { Equipment, Goal } from '@/lib/types';
 import { fonts, layout, motion, space } from '@/theme/tokens';
 import { usePalette } from '@/theme/useTheme';
+
+const SESSION_MINUTES = [30, 45, 60, 75, 90];
 
 // --- brand art: slowly rotating track rings ---------------------------------
 function TrackRings({ size, color, faint }: { size: number; color: string; faint: string }) {
@@ -84,20 +88,23 @@ function Marquee({ text, color }: { text: string; color: string }) {
 }
 
 // --- steps -------------------------------------------------------------------
-type Step = 'intro' | 'goal' | 'frequency' | 'strength' | 'cardio' | 'printing';
-const ORDER: Step[] = ['intro', 'goal', 'frequency', 'strength', 'cardio'];
+type Step = 'intro' | 'goal' | 'duration' | 'frequency' | 'equipment' | 'strength' | 'cardio' | 'printing';
+const ORDER: Step[] = ['intro', 'goal', 'duration', 'frequency', 'equipment', 'strength', 'cardio'];
 
 export default function Onboarding() {
   const { c } = usePalette();
   const router = useRouter();
-  const { apply } = useStore();
+  const { state, apply } = useStore();
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const reduced = useReducedMotion();
 
   const [step, setStep] = useState<Step>('intro');
   const [goal, setGoal] = useState<Goal>('hypertrophy');
+  const [physiqueRef, setPhysiqueRef] = useState('');
+  const [sessionMinutes, setSessionMinutes] = useState(60);
   const [frequency, setFrequency] = useState(3);
+  const [equipmentSet, setEquipmentSet] = useState<Set<Equipment>>(new Set(ALL_EQUIPMENT));
   const [squatW, setSquatW] = useState(60);
   const [squatR, setSquatR] = useState(5);
   const [benchW, setBenchW] = useState(40);
@@ -105,33 +112,57 @@ export default function Onboarding() {
   const [deadW, setDeadW] = useState(80);
   const [deadR, setDeadR] = useState(5);
   const [pace, setPace] = useState(360);
+  const [printLabel, setPrintLabel] = useState('Setting the type…');
 
   const stepIndex = ORDER.indexOf(step);
+  const equipment = useMemo(() => Array.from(equipmentSet), [equipmentSet]);
 
-  const preview = useMemo(() => {
-    const baseline: Baseline = {
+  const baseline: Baseline = useMemo(
+    () => ({
       squat: { weightKg: squatW, reps: squatR },
       bench: { weightKg: benchW, reps: benchR },
       deadlift: { weightKg: deadW, reps: deadR },
       paceSecPerKm: pace,
-    };
-    return generateProgram(goal, frequency, baseline);
-  }, [goal, frequency, squatW, squatR, benchW, benchR, deadW, deadR, pace]);
+    }),
+    [squatW, squatR, benchW, benchR, deadW, deadR, pace],
+  );
 
-  const print = () => {
+  const preview = useMemo(
+    () =>
+      generateProgram(goal, frequency, baseline, new Date(), {
+        sessionMinutes,
+        equipment,
+        physiqueRef: goal === 'custom' ? physiqueRef.trim() : undefined,
+      }),
+    [goal, frequency, baseline, sessionMinutes, equipment, physiqueRef],
+  );
+
+  const print = async () => {
     setStep('printing');
-    const delay = reduced ? 200 : 1700;
+    setPrintLabel(hasAiConfigured(state) ? 'Consulting the coach…' : 'Setting the type…');
+    const start = Date.now();
+    const minDelay = reduced ? 200 : 1700;
+    const options = { sessionMinutes, equipment, physiqueRef: goal === 'custom' ? physiqueRef.trim() : undefined };
+
+    const aiProgram = await generateProgramAI({ goal, frequency, sessionMinutes, equipment, baseline, physiqueRef: options.physiqueRef }, state).catch(
+      () => null,
+    );
+    const program = aiProgram ?? generateProgram(goal, frequency, baseline, new Date(), options);
+
+    const remaining = Math.max(0, minDelay - (Date.now() - start));
     setTimeout(() => {
-      apply((prev) => ({ ...prev, program: preview, logs: [] }));
+      apply((prev) => ({ ...prev, program, logs: [] }));
       router.replace('/');
-    }, delay);
+    }, remaining);
   };
 
   const goals: { key: Goal; blurb: string }[] = [
     { key: 'strength', blurb: 'Heavy triples and fives. Long rests. The bar goes up.' },
     { key: 'hypertrophy', blurb: 'Eights to twelves. Moderate rests. Build the frame.' },
     { key: 'health', blurb: 'Higher reps, easy miles. Show up, feel better.' },
+    { key: 'custom', blurb: 'Name a physique you admire. The coach adapts their approach to you.' },
   ];
+  const canAdvanceFromGoal = goal !== 'custom' || physiqueRef.trim().length > 0;
 
   return (
     <View style={{ flex: 1, backgroundColor: c.paper }}>
@@ -158,7 +189,7 @@ export default function Onboarding() {
               <IconArrowLeft size={22} color={c.ink} />
             </PressableScale>
             <AppText v="label" color={c.inkSoft}>
-              {String(stepIndex).padStart(2, '0')} / 04
+              {String(stepIndex).padStart(2, '0')} / {String(ORDER.length - 1).padStart(2, '0')}
             </AppText>
           </View>
         )}
@@ -223,6 +254,67 @@ export default function Onboarding() {
                     </View>
                     <AppText v="body" color={c.inkSoft} style={{ marginTop: 4, fontSize: 15, lineHeight: 20 }}>
                       {blurb}
+                    </AppText>
+                    {key === 'custom' && active && (
+                      <TextInput
+                        value={physiqueRef}
+                        onChangeText={setPhysiqueRef}
+                        placeholder="e.g. Chris Hemsworth, Michael B. Jordan…"
+                        placeholderTextColor={c.inkFaint}
+                        style={{
+                          marginTop: space.sm,
+                          borderWidth: layout.rule,
+                          borderColor: c.line,
+                          backgroundColor: c.paper,
+                          padding: 10,
+                          fontFamily: fonts.displayRegular,
+                          fontSize: 16,
+                          color: c.ink,
+                          minHeight: 44,
+                        }}
+                      />
+                    )}
+                  </PressableScale>
+                );
+              })}
+            </View>
+            <View style={{ flex: 1 }} />
+            <BlockButton label="Next — session length" disabled={!canAdvanceFromGoal} onPress={() => setStep('duration')} />
+          </Animated.View>
+        )}
+
+        {step === 'duration' && (
+          <Animated.View key="duration" entering={FadeInDown.duration(motion.base)} style={{ flex: 1 }}>
+            <AppText v="display" style={{ marginBottom: 4 }}>
+              Minutes per session?
+            </AppText>
+            <AppText v="serif" color={c.inkSoft} style={{ marginBottom: space.xl }}>
+              How long a session actually runs — warmup to last set. The coach sizes volume to fit.
+            </AppText>
+            <View style={{ flexDirection: 'row', gap: space.sm, marginBottom: space.xl }}>
+              {SESSION_MINUTES.map((n) => {
+                const active = sessionMinutes === n;
+                return (
+                  <PressableScale
+                    key={n}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: active }}
+                    onPress={() => setSessionMinutes(n)}
+                    style={{
+                      flex: 1,
+                      aspectRatio: 1,
+                      borderWidth: layout.rule,
+                      borderColor: active ? c.ink : c.lineFaint,
+                      backgroundColor: active ? c.ink : 'transparent',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <AppText v="display" color={active ? c.paper : c.inkSoft} style={{ fontSize: 26, lineHeight: 28 }}>
+                      {n}
+                    </AppText>
+                    <AppText v="label" color={active ? c.paper : c.inkFaint} style={{ fontSize: 9 }}>
+                      min
                     </AppText>
                   </PressableScale>
                 );
@@ -298,6 +390,55 @@ export default function Onboarding() {
               })}
             </View>
             <View style={{ flex: 1 }} />
+            <BlockButton label="Next — equipment" onPress={() => setStep('equipment')} />
+          </Animated.View>
+        )}
+
+        {step === 'equipment' && (
+          <Animated.View key="equipment" entering={FadeInDown.duration(motion.base)} style={{ flex: 1 }}>
+            <AppText v="display" style={{ marginBottom: 4 }}>
+              What's in the gym?
+            </AppText>
+            <AppText v="serif" color={c.inkSoft} style={{ marginBottom: space.xl }}>
+              Exercise selection sticks to what you've got. Pick everything available to you.
+            </AppText>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+              {ALL_EQUIPMENT.map((eq) => {
+                const active = equipmentSet.has(eq);
+                return (
+                  <PressableScale
+                    key={eq}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: active }}
+                    onPress={() =>
+                      setEquipmentSet((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(eq)) next.delete(eq);
+                        else next.add(eq);
+                        return next;
+                      })
+                    }
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 8,
+                      borderWidth: layout.rule,
+                      borderColor: active ? c.ink : c.lineFaint,
+                      backgroundColor: active ? c.ink : 'transparent',
+                      paddingHorizontal: space.md,
+                      paddingVertical: 10,
+                      minHeight: 44,
+                    }}
+                  >
+                    {active && <IconCheck size={14} color={c.paper} />}
+                    <AppText v="title" color={active ? c.paper : c.inkSoft} style={{ fontSize: 14 }}>
+                      {EQUIPMENT_LABELS[eq]}
+                    </AppText>
+                  </PressableScale>
+                );
+              })}
+            </View>
+            <View style={{ flex: 1 }} />
             <BlockButton label="Next — baselines" onPress={() => setStep('strength')} />
           </Animated.View>
         )}
@@ -349,7 +490,7 @@ export default function Onboarding() {
                 label="min / km"
                 value={pace}
                 onChange={setPace}
-                step={15}
+                step={1}
                 min={180}
                 max={720}
                 width={120}
@@ -368,7 +509,7 @@ export default function Onboarding() {
           <Animated.View key="printing" entering={FadeIn.duration(150)} style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: space.xl }}>
             <PrintingStamp color={c.strength} paper={c.paper} />
             <AppText v="serif" color={c.inkSoft}>
-              Setting the type…
+              {printLabel}
             </AppText>
           </Animated.View>
         )}

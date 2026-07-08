@@ -5,6 +5,7 @@
 import assert from 'node:assert';
 import {
   completeSession,
+  exerciseCountFor,
   fmtDuration,
   fmtPace,
   generateProgram,
@@ -15,6 +16,7 @@ import {
   sessionsThisWeek,
   type Baseline,
 } from './engine.ts';
+import { EXERCISES } from './exercises.ts';
 import type { AppState, CardioSlot, StrengthSlot } from './types.ts';
 
 const baseline: Baseline = {
@@ -35,7 +37,31 @@ for (const freq of [2, 3, 4, 5]) {
 const prog = generateProgram('hypertrophy', 3, baseline, new Date('2026-01-05'));
 assert.equal(new Date(prog.blockEndsAt).getMonth(), 3, 'block ends 3 months out');
 
+// --- session-duration volume sizing ---
+assert.ok(exerciseCountFor('strength', 30) < exerciseCountFor('strength', 90), 'longer sessions get more exercises');
+assert.ok(exerciseCountFor('hypertrophy', 60) >= 3, 'a 60min session always fits at least 3 exercises');
+const shortProg = generateProgram('hypertrophy', 3, baseline, new Date('2026-01-05'), { sessionMinutes: 30 });
+const longProg = generateProgram('hypertrophy', 3, baseline, new Date('2026-01-05'), { sessionMinutes: 90 });
+const strengthSlotCount = (p: typeof prog) =>
+  p.workouts.filter((w) => w.domain === 'strength').reduce((acc, w) => acc + w.slotIds.length, 0);
+assert.ok(strengthSlotCount(shortProg) < strengthSlotCount(longProg), '90min program has more total volume than 30min');
+
+// --- custom goal (physique-inspired) falls back cleanly ---
+const customProg = generateProgram('custom', 3, baseline, new Date('2026-01-05'), { physiqueRef: 'Chris Hemsworth' });
+assert.equal(customProg.physiqueRef, 'Chris Hemsworth');
+assert.ok(customProg.workouts.every((w) => w.slotIds.length > 0), 'custom goal still produces complete workouts');
+
+// --- equipment filtering ---
+const bodyweightOnly = generateProgram('health', 3, baseline, new Date('2026-01-05'), { equipment: ['bodyweight'] });
+const bwSlots = Object.values(bodyweightOnly.slots).filter((s) => s.domain === 'strength') as StrengthSlot[];
+assert.ok(bwSlots.length > 0, 'equipment filter still yields exercises');
+for (const s of bwSlots) {
+  const def = EXERCISES.find((e) => e.name === s.name)!;
+  assert.ok(def.equipment.includes('bodyweight'), `${s.name} respects the bodyweight-only filter`);
+}
+
 // --- strength scoring ---
+assert.equal(prog.sessionMinutes, 60, 'default session length is 60 min');
 const squat = Object.values(prog.slots).find((s) => s.domain === 'strength' && s.name === 'Back Squat') as StrengthSlot;
 assert.ok(squat.weightKg > 0 && squat.weightKg % 1.25 === 0, 'weight is plate-loadable');
 const w = squat.weightKg;

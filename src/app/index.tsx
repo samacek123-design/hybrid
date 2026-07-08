@@ -9,6 +9,7 @@ import { View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { RewardOverlay, type RewardSummary } from '@/components/RewardOverlay';
+import { replanAfterSession } from '@/lib/ai';
 import { AppText } from '@/components/ui/AppText';
 import { BlockButton, Rule, Stepper, Tally } from '@/components/ui/Bits';
 import { IconBarbell, IconCheck, IconTimer, IconTrack } from '@/components/ui/Icons';
@@ -186,6 +187,23 @@ export default function Today() {
 
     setReward({ verdict, color: domainTint, lines, coach: VERDICT_COACH[verdict] });
     apply(() => next);
+
+    // Optimistic completion: the reward moment and the engine's own
+    // progression above already landed instantly and offline-safe. AI
+    // refinement of next-session prescriptions happens async on top —
+    // never blocks the loop, and is a no-op without a configured key.
+    const programAfter = next.program;
+    if (programAfter) {
+      replanAfterSession(state, programAfter, log)
+        .then((updates) => {
+          if (!updates) return;
+          apply((prev) => {
+            if (!prev.program || prev.program.id !== programAfter.id) return prev;
+            return { ...prev, program: { ...prev.program, slots: { ...prev.program.slots, ...updates } } };
+          });
+        })
+        .catch(() => {});
+    }
   };
 
   return (

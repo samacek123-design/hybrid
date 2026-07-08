@@ -8,7 +8,7 @@ import { View } from 'react-native';
 
 import { AppText } from '@/components/ui/AppText';
 import { BlockButton, GhostButton, Rule } from '@/components/ui/Bits';
-import { IconArrowRight, IconPaper } from '@/components/ui/Icons';
+import { IconArrowRight, IconGear, IconPaper } from '@/components/ui/Icons';
 import { PressableScale } from '@/components/ui/Pressable';
 import { Screen } from '@/components/ui/Screen';
 import { GOAL_PARAMS, baselineFromProgram, fmtPace, generateProgram, weeksInBlock } from '@/lib/engine';
@@ -48,7 +48,11 @@ export default function Profile() {
     apply((prev) => {
       if (!prev.program) return prev;
       const b = baselineFromProgram(prev.program);
-      const next = generateProgram(effGoal, effFreq, b);
+      const next = generateProgram(effGoal, effFreq, b, new Date(), {
+        sessionMinutes: prev.program.sessionMinutes,
+        equipment: prev.program.equipment,
+        physiqueRef: prev.program.physiqueRef,
+      });
       // a reprint continues the same block clock, it doesn't restart it
       return {
         ...prev,
@@ -159,6 +163,39 @@ export default function Profile() {
           <BlockButton small label="Reprint program" onPress={reprint} />
         </View>
       )}
+
+      {/* settings link */}
+      <AppText v="label" color={c.inkSoft} style={{ marginTop: space.xl, marginBottom: space.sm }}>
+        preferences
+      </AppText>
+      <Link href="/settings" asChild>
+        <PressableScale
+          accessibilityRole="link"
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            borderWidth: layout.rule,
+            borderColor: c.line,
+            padding: space.md,
+            minHeight: 44,
+            marginBottom: space.sm,
+          }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+            <IconGear size={20} color={c.ink} />
+            <View>
+              <AppText v="title" style={{ fontSize: 16 }}>
+                Settings
+              </AppText>
+              <AppText v="label" color={c.inkFaint} style={{ fontSize: 9 }}>
+                theme + AI coach connection
+              </AppText>
+            </View>
+          </View>
+          <IconArrowRight size={18} color={c.ink} />
+        </PressableScale>
+      </Link>
 
       {/* guide link */}
       <AppText v="label" color={c.inkSoft} style={{ marginTop: space.xl, marginBottom: space.sm }}>

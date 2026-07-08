@@ -6,10 +6,12 @@
  * passed in — so the whole thing is testable with plain node.
  */
 
+import { EXERCISES, pickExercises, type ExerciseGroup } from './exercises.ts';
 import type {
   AppState,
   CardioResult,
   CardioSlot,
+  Equipment,
   Goal,
   Program,
   SessionLog,
@@ -66,6 +68,15 @@ export const GOAL_PARAMS: Record<
     incrementPct: 0.025,
     cardio: { intensity: 'easy', distanceKm: 5 },
   },
+  custom: {
+    label: 'Custom Physique',
+    sets: 3,
+    repRange: [8, 12],
+    restSec: 90,
+    workingPct: 0.7,
+    incrementPct: 0.025,
+    cardio: { intensity: 'steady', distanceKm: 4 },
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -97,22 +108,12 @@ export function roundLoad(kg: number): number {
  * Derive a working weight for an exercise from the three anchor lifts.
  * Ratios are conventional strength-standard heuristics — good enough to
  * start; the progression rules correct any error within 2–3 sessions.
+ * Sourced from the exercise catalog so every cataloged lift (not just the
+ * three anchors) resolves to a sane starting weight.
  */
-const LIFT_RATIOS: Record<string, { anchor: keyof Omit<Baseline, 'paceSecPerKm'>; ratio: number }> = {
-  'Back Squat': { anchor: 'squat', ratio: 1 },
-  'Bench Press': { anchor: 'bench', ratio: 1 },
-  Deadlift: { anchor: 'deadlift', ratio: 1 },
-  'Overhead Press': { anchor: 'bench', ratio: 0.62 },
-  'Barbell Row': { anchor: 'deadlift', ratio: 0.55 },
-  'Romanian Deadlift': { anchor: 'deadlift', ratio: 0.7 },
-  'Front Squat': { anchor: 'squat', ratio: 0.8 },
-  'Incline Bench': { anchor: 'bench', ratio: 0.8 },
-  'Lat Pulldown': { anchor: 'bench', ratio: 0.65 },
-  'Hip Thrust': { anchor: 'squat', ratio: 1.05 },
-  'Walking Lunge': { anchor: 'squat', ratio: 0.4 },
-  'Dumbbell Curl': { anchor: 'bench', ratio: 0.16 },
-  'Seated Cable Row': { anchor: 'deadlift', ratio: 0.5 },
-} as const;
+const LIFT_RATIOS: Record<string, { anchor: keyof Omit<Baseline, 'paceSecPerKm'>; ratio: number }> = Object.fromEntries(
+  EXERCISES.map((e) => [e.name, { anchor: e.anchor, ratio: e.ratio }]),
+);
 
 export function workingWeight(exercise: string, goal: Goal, baseline: Baseline): number {
   const map = LIFT_RATIOS[exercise] ?? { anchor: 'squat' as const, ratio: 0.5 };
@@ -129,65 +130,98 @@ interface WorkoutTemplate {
   title: string;
   focus: string;
   domain: 'strength' | 'cardio';
-  exercises?: string[];
+  /** muscle groups this workout draws from, in round-robin priority order */
+  groups?: ExerciseGroup[];
   cardio?: { name: string };
 }
 
 const ROTATIONS: Record<number, WorkoutTemplate[]> = {
   2: [
-    { title: 'Full Body I', focus: 'Squat emphasis', domain: 'strength', exercises: ['Back Squat', 'Bench Press', 'Barbell Row'] },
+    { title: 'Full Body I', focus: 'Squat emphasis', domain: 'strength', groups: ['legs', 'push', 'pull'] },
     { title: 'Roadwork', focus: 'Run', domain: 'cardio', cardio: { name: 'Run' } },
-    { title: 'Full Body II', focus: 'Hinge emphasis', domain: 'strength', exercises: ['Deadlift', 'Overhead Press', 'Lat Pulldown'] },
+    { title: 'Full Body II', focus: 'Hinge emphasis', domain: 'strength', groups: ['hinge', 'pull', 'push'] },
   ],
   3: [
-    { title: 'Upper', focus: 'Push + pull', domain: 'strength', exercises: ['Bench Press', 'Barbell Row', 'Overhead Press'] },
-    { title: 'Lower', focus: 'Squat + hinge', domain: 'strength', exercises: ['Back Squat', 'Romanian Deadlift', 'Walking Lunge'] },
+    { title: 'Upper', focus: 'Push + pull', domain: 'strength', groups: ['push', 'pull'] },
+    { title: 'Lower', focus: 'Squat + hinge', domain: 'strength', groups: ['legs', 'hinge', 'core'] },
     { title: 'Roadwork', focus: 'Run', domain: 'cardio', cardio: { name: 'Run' } },
   ],
   4: [
-    { title: 'Upper', focus: 'Push + pull', domain: 'strength', exercises: ['Bench Press', 'Barbell Row', 'Overhead Press'] },
-    { title: 'Lower', focus: 'Squat + hinge', domain: 'strength', exercises: ['Back Squat', 'Romanian Deadlift', 'Walking Lunge'] },
+    { title: 'Upper', focus: 'Push + pull', domain: 'strength', groups: ['push', 'pull'] },
+    { title: 'Lower', focus: 'Squat + hinge', domain: 'strength', groups: ['legs', 'hinge'] },
     { title: 'Roadwork', focus: 'Run', domain: 'cardio', cardio: { name: 'Run' } },
-    { title: 'Full Body', focus: 'Heavy compound', domain: 'strength', exercises: ['Deadlift', 'Incline Bench', 'Seated Cable Row'] },
+    { title: 'Full Body', focus: 'Heavy compound', domain: 'strength', groups: ['legs', 'pull', 'push', 'hinge'] },
   ],
   5: [
-    { title: 'Push', focus: 'Chest + shoulders', domain: 'strength', exercises: ['Bench Press', 'Overhead Press', 'Incline Bench'] },
-    { title: 'Pull', focus: 'Back + arms', domain: 'strength', exercises: ['Deadlift', 'Lat Pulldown', 'Dumbbell Curl'] },
+    { title: 'Push', focus: 'Chest + shoulders', domain: 'strength', groups: ['push', 'core'] },
+    { title: 'Pull', focus: 'Back + arms', domain: 'strength', groups: ['pull', 'core'] },
     { title: 'Tempo Run', focus: 'Pace work', domain: 'cardio', cardio: { name: 'Tempo Run' } },
-    { title: 'Legs', focus: 'Squat + accessories', domain: 'strength', exercises: ['Back Squat', 'Hip Thrust', 'Walking Lunge'] },
+    { title: 'Legs', focus: 'Squat + accessories', domain: 'strength', groups: ['legs', 'hinge'] },
     { title: 'Long Run', focus: 'Aerobic base', domain: 'cardio', cardio: { name: 'Long Run' } },
   ],
 };
 
 const WORKOUT_KEYS = ['A', 'B', 'C', 'D', 'E'];
 
+/**
+ * How many exercises a workout should carry, given the goal's rest/set
+ * profile and the minutes available. Roughly:
+ *   usable seconds = session length − 5 min warmup/transition
+ *   time per exercise = sets × (rest + ~40s working time)
+ * then clamped to a sane range for very short or very long sessions.
+ */
+export function exerciseCountFor(goal: Goal, sessionMinutes: number): number {
+  const params = GOAL_PARAMS[goal];
+  const timePerExerciseSec = params.sets * (params.restSec + 40);
+  const usableSec = Math.max(0, sessionMinutes * 60 - 300);
+  const raw = timePerExerciseSec > 0 ? Math.floor(usableSec / timePerExerciseSec) : 3;
+  const minEx = sessionMinutes <= 30 ? 2 : 3;
+  const maxEx = sessionMinutes <= 30 ? 4 : sessionMinutes <= 45 ? 5 : sessionMinutes <= 60 ? 6 : sessionMinutes <= 75 ? 7 : 8;
+  return Math.min(maxEx, Math.max(minEx, raw));
+}
+
+export function slotIdFor(key: string, name: string): string {
+  return `${key}:${name.toLowerCase().replace(/\s+/g, '-')}`;
+}
+
+export interface ProgramOptions {
+  sessionMinutes?: number;
+  equipment?: Equipment[];
+  physiqueRef?: string;
+}
+
 export function generateProgram(
   goal: Goal,
   frequency: number,
   baseline: Baseline,
   now: Date = new Date(),
+  options: ProgramOptions = {},
 ): Program {
   const templates = ROTATIONS[frequency] ?? ROTATIONS[3];
   const params = GOAL_PARAMS[goal];
+  const sessionMinutes = options.sessionMinutes ?? 60;
+  const equipment = options.equipment ?? [];
   const workouts: Workout[] = [];
   const slots: Record<string, Slot> = {};
 
   templates.forEach((t, i) => {
     const key = WORKOUT_KEYS[i];
     const slotIds: string[] = [];
-    if (t.domain === 'strength' && t.exercises) {
-      for (const name of t.exercises) {
-        const id = `${key}:${name.toLowerCase().replace(/\s+/g, '-')}`;
+    if (t.domain === 'strength' && t.groups) {
+      const count = exerciseCountFor(goal, sessionMinutes);
+      const picks = pickExercises(t.groups, count, equipment);
+      for (const ex of picks) {
+        const id = slotIdFor(key, ex.name);
         slotIds.push(id);
         const slot: StrengthSlot = {
           id,
           domain: 'strength',
           workoutKey: key,
-          name,
+          name: ex.name,
           sets: params.sets,
           repRange: params.repRange,
           restSec: params.restSec,
-          weightKg: workingWeight(name, goal, baseline),
+          weightKg: workingWeight(ex.name, goal, baseline),
         };
         slots[id] = slot;
       }
@@ -196,7 +230,7 @@ export function generateProgram(
       const isLong = t.cardio.name === 'Long Run';
       const distanceKm = isLong ? params.cardio.distanceKm + 2 : params.cardio.distanceKm;
       const paceFactor = t.cardio.name === 'Tempo Run' ? 0.94 : isLong ? 1.08 : 1;
-      const id = `${key}:${t.cardio.name.toLowerCase().replace(/\s+/g, '-')}`;
+      const id = slotIdFor(key, t.cardio.name);
       slotIds.push(id);
       const slot: CardioSlot = {
         id,
@@ -219,6 +253,9 @@ export function generateProgram(
     id: `prog-${now.getTime()}`,
     goal,
     frequency,
+    sessionMinutes,
+    equipment,
+    physiqueRef: options.physiqueRef,
     startedAt: now.toISOString(),
     blockEndsAt: blockEnd.toISOString(),
     workouts,

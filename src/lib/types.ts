@@ -4,8 +4,9 @@
  * is directly comparable to its previous appearance.
  */
 
-export type Goal = 'strength' | 'hypertrophy' | 'health';
+export type Goal = 'strength' | 'hypertrophy' | 'health' | 'custom';
 export type Domain = 'strength' | 'cardio';
+export type Equipment = 'barbell' | 'dumbbell' | 'machine' | 'cable' | 'bodyweight';
 
 export type Outcome = 'beat' | 'hit' | 'held' | 'missed';
 
@@ -47,6 +48,14 @@ export interface Program {
   goal: Goal;
   /** sessions per week — also the weekly target */
   frequency: number;
+  /** minutes available per session — drives exercise/volume sizing */
+  sessionMinutes: number;
+  /** equipment the athlete has access to — drives exercise selection */
+  equipment: Equipment[];
+  /** for goal === 'custom': the admired physique/athlete named at onboarding */
+  physiqueRef?: string;
+  /** true when this program's workouts/slots were produced by the AI planner */
+  aiGenerated?: boolean;
   startedAt: string; // ISO date
   blockEndsAt: string; // ISO date, +3 months
   workouts: Workout[];
@@ -92,11 +101,28 @@ export interface SessionLog {
   results: SlotResult[];
 }
 
+export type ThemeMode = 'light' | 'dark' | 'system';
+
+export interface AiSettings {
+  /** on-device override for EXPO_PUBLIC_OPENROUTER_API_KEY */
+  apiKey?: string;
+  /** OpenRouter model slug, e.g. "openai/gpt-4o-mini" */
+  model?: string;
+}
+
 export interface AppState {
   program: Program | null;
   logs: SessionLog[];
   /** display name chosen at onboarding (optional) */
   athlete: string;
+  themeMode: ThemeMode;
+  aiSettings: AiSettings;
 }
 
-export const EMPTY_STATE: AppState = { program: null, logs: [], athlete: '' };
+export const EMPTY_STATE: AppState = {
+  program: null,
+  logs: [],
+  athlete: '',
+  themeMode: 'system',
+  aiSettings: {},
+};

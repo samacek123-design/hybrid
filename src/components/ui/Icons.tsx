@@ -160,3 +160,20 @@ export function IconTimer(p: IconProps) {
     </Svg>
   );
 }
+
+/** settings — a dial */
+export function IconGear(p: IconProps) {
+  return (
+    <Svg {...base(p)}>
+      <Circle cx="12" cy="12" r="3.2" {...stroke(p)} />
+      <Line x1="12" y1="2.5" x2="12" y2="5.5" {...stroke(p)} />
+      <Line x1="12" y1="18.5" x2="12" y2="21.5" {...stroke(p)} />
+      <Line x1="2.5" y1="12" x2="5.5" y2="12" {...stroke(p)} />
+      <Line x1="18.5" y1="12" x2="21.5" y2="12" {...stroke(p)} />
+      <Line x1="5.1" y1="5.1" x2="7.2" y2="7.2" {...stroke(p)} />
+      <Line x1="16.8" y1="16.8" x2="18.9" y2="18.9" {...stroke(p)} />
+      <Line x1="18.9" y1="5.1" x2="16.8" y2="7.2" {...stroke(p)} />
+      <Line x1="7.2" y1="16.8" x2="5.1" y2="18.9" {...stroke(p)} />
+    </Svg>
+  );
+}
